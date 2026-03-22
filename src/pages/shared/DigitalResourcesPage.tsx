@@ -1,0 +1,357 @@
+import { useState, useMemo } from 'react';
+import { Edit2, Trash2, Search, FileText, Download, Upload, Filter, Eye } from 'lucide-react';
+import { useStore } from '../../store';
+import { Card } from '../../components/UI/Card';
+import { Button } from '../../components/UI/Button';
+import { Modal } from '../../components/UI/Modal';
+import { Input, Textarea, Select } from '../../components/UI/Input';
+import { Badge } from '../../components/UI/Table';
+import type { DigitalResource } from '../../types';
+import { cn } from '../../utils/cn';
+import { format, parseISO } from 'date-fns';
+
+interface DigitalResourcesPageProps {
+  canManage?: boolean;
+}
+
+export function DigitalResourcesPage({ canManage = false }: DigitalResourcesPageProps) {
+  const { digitalResources, addDigitalResource, updateDigitalResource, deleteDigitalResource, incrementDownload, currentUser, users } = useStore();
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingResource, setEditingResource] = useState<DigitalResource | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState<string>('all');
+  const [viewingResource, setViewingResource] = useState<DigitalResource | null>(null);
+
+  const [formData, setFormData] = useState({
+    title: '',
+    description: '',
+    fileUrl: '',
+    fileType: 'PDF',
+    fileSize: '',
+    category: '',
+  });
+
+  const categories = useMemo(() => {
+    const cats = new Set(digitalResources.map(r => r.category));
+    return ['all', ...Array.from(cats)];
+  }, [digitalResources]);
+
+  const filteredResources = useMemo(() => {
+    return digitalResources.filter(resource => {
+      const matchesSearch = 
+        resource.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        resource.description.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesCategory = categoryFilter === 'all' || resource.category === categoryFilter;
+      return matchesSearch && matchesCategory;
+    });
+  }, [digitalResources, searchQuery, categoryFilter]);
+
+  const handleOpenModal = (resource?: DigitalResource) => {
+    if (resource) {
+      setEditingResource(resource);
+      setFormData({
+        title: resource.title,
+        description: resource.description,
+        fileUrl: resource.fileUrl,
+        fileType: resource.fileType,
+        fileSize: resource.fileSize,
+        category: resource.category,
+      });
+    } else {
+      setEditingResource(null);
+      setFormData({ title: '', description: '', fileUrl: '', fileType: 'PDF', fileSize: '', category: '' });
+    }
+    setIsModalOpen(true);
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (editingResource) {
+      updateDigitalResource(editingResource.id, formData);
+    } else {
+      addDigitalResource({
+        ...formData,
+        uploadedBy: currentUser?.id || '',
+      });
+    }
+    setIsModalOpen(false);
+    setEditingResource(null);
+  };
+
+  const handleDelete = (id: string) => {
+    if (confirm('Are you sure you want to delete this resource?')) {
+      deleteDigitalResource(id);
+    }
+  };
+
+  const handleDownload = (resource: DigitalResource) => {
+    incrementDownload(resource.id);
+    // Simulate download
+    alert(`Downloading: ${resource.title}`);
+  };
+
+  const fileTypeColors: Record<string, string> = {
+    'PDF': 'from-red-500 to-rose-600',
+    'DOC': 'from-blue-500 to-indigo-600',
+    'PPT': 'from-orange-500 to-amber-600',
+    'XLS': 'from-emerald-500 to-teal-600',
+  };
+
+  const totalDownloads = digitalResources.reduce((acc, r) => acc + r.downloads, 0);
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Digital Resources</h2>
+          <p className="text-gray-500 dark:text-gray-400">
+            {filteredResources.length} resources • {totalDownloads} total downloads
+          </p>
+        </div>
+        {canManage && (
+          <Button onClick={() => handleOpenModal()} icon={<Upload size={18} />}>
+            Upload Resource
+          </Button>
+        )}
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <Card className="text-center">
+          <p className="text-3xl font-bold text-gray-900 dark:text-white">{digitalResources.length}</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400">Total Resources</p>
+        </Card>
+        <Card className="text-center">
+          <p className="text-3xl font-bold text-indigo-600">{totalDownloads}</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400">Total Downloads</p>
+        </Card>
+        <Card className="text-center">
+          <p className="text-3xl font-bold text-emerald-600">{categories.length - 1}</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400">Categories</p>
+        </Card>
+        <Card className="text-center">
+          <p className="text-3xl font-bold text-amber-600">
+            {digitalResources.filter(r => r.fileType === 'PDF').length}
+          </p>
+          <p className="text-sm text-gray-500 dark:text-gray-400">PDF Documents</p>
+        </Card>
+      </div>
+
+      {/* Filters */}
+      <Card>
+        <div className="flex flex-col sm:flex-row gap-4">
+          <div className="flex-1 relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search resources..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <Filter size={18} className="text-gray-400" />
+            <select
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value)}
+              className="px-4 py-2.5 rounded-xl bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            >
+              {categories.map(cat => (
+                <option key={cat} value={cat}>
+                  {cat === 'all' ? 'All Categories' : cat}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      </Card>
+
+      {/* Resources Grid */}
+      {filteredResources.length === 0 ? (
+        <Card className="text-center py-12">
+          <FileText size={48} className="mx-auto text-gray-300 dark:text-gray-600 mb-4" />
+          <p className="text-gray-500 dark:text-gray-400">No resources found</p>
+        </Card>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+          {filteredResources.map(resource => {
+            const uploader = users.find(u => u.id === resource.uploadedBy);
+            return (
+              <Card key={resource.id} hover className="flex flex-col">
+                <div className={cn(
+                  'h-24 rounded-xl mb-4 flex items-center justify-center bg-gradient-to-br',
+                  fileTypeColors[resource.fileType] || 'from-gray-500 to-gray-600'
+                )}>
+                  <FileText size={40} className="text-white/80" />
+                </div>
+                <div className="flex-1">
+                  <div className="flex items-start justify-between gap-2 mb-2">
+                    <h3 className="font-semibold text-gray-900 dark:text-white line-clamp-2">{resource.title}</h3>
+                    <Badge variant="info">{resource.fileType}</Badge>
+                  </div>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 line-clamp-2 mb-3">
+                    {resource.description}
+                  </p>
+                  <div className="flex items-center gap-3 text-xs text-gray-400 mb-4">
+                    <span>{resource.category}</span>
+                    <span>•</span>
+                    <span>{resource.fileSize}</span>
+                    <span>•</span>
+                    <span>{resource.downloads} downloads</span>
+                  </div>
+                  <p className="text-xs text-gray-400">
+                    Uploaded by {uploader?.name || 'Unknown'} on {format(parseISO(resource.createdAt), 'MMM d, yyyy')}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 pt-3 mt-3 border-t border-gray-100 dark:border-gray-800">
+                  <Button 
+                    size="sm" 
+                    variant="secondary"
+                    onClick={() => setViewingResource(resource)}
+                    icon={<Eye size={14} />}
+                  >
+                    Preview
+                  </Button>
+                  <Button 
+                    size="sm" 
+                    onClick={() => handleDownload(resource)}
+                    icon={<Download size={14} />}
+                  >
+                    Download
+                  </Button>
+                  {canManage && (
+                    <>
+                      <Button size="sm" variant="ghost" onClick={() => handleOpenModal(resource)}>
+                        <Edit2 size={14} />
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => handleDelete(resource.id)}>
+                        <Trash2 size={14} />
+                      </Button>
+                    </>
+                  )}
+                </div>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Preview Modal */}
+      <Modal
+        isOpen={!!viewingResource}
+        onClose={() => setViewingResource(null)}
+        title={viewingResource?.title || 'Resource Preview'}
+        size="lg"
+      >
+        {viewingResource && (
+          <div className="space-y-4">
+            <div className={cn(
+              'h-48 rounded-xl flex items-center justify-center bg-gradient-to-br',
+              fileTypeColors[viewingResource.fileType] || 'from-gray-500 to-gray-600'
+            )}>
+              <FileText size={64} className="text-white/80" />
+            </div>
+            <div>
+              <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
+                {viewingResource.title}
+              </h3>
+              <p className="text-gray-600 dark:text-gray-400">{viewingResource.description}</p>
+            </div>
+            <div className="grid grid-cols-2 gap-4 py-4 border-t border-gray-200 dark:border-gray-700">
+              <div>
+                <p className="text-sm text-gray-500">Category</p>
+                <p className="font-medium text-gray-900 dark:text-white">{viewingResource.category}</p>
+              </div>
+              <div>
+                <p className="text-sm text-gray-500">File Type</p>
+                <p className="font-medium text-gray-900 dark:text-white">{viewingResource.fileType}</p>
+              </div>
+              <div>
+                <p className="text-sm text-gray-500">File Size</p>
+                <p className="font-medium text-gray-900 dark:text-white">{viewingResource.fileSize}</p>
+              </div>
+              <div>
+                <p className="text-sm text-gray-500">Downloads</p>
+                <p className="font-medium text-gray-900 dark:text-white">{viewingResource.downloads}</p>
+              </div>
+            </div>
+            <Button fullWidth onClick={() => handleDownload(viewingResource)} icon={<Download size={18} />}>
+              Download Resource
+            </Button>
+          </div>
+        )}
+      </Modal>
+
+      {/* Add/Edit Modal */}
+      <Modal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        title={editingResource ? 'Edit Resource' : 'Upload New Resource'}
+        size="lg"
+      >
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <Input
+            label="Title"
+            value={formData.title}
+            onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+            placeholder="Enter resource title"
+            required
+          />
+          <Textarea
+            label="Description"
+            value={formData.description}
+            onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+            placeholder="Enter resource description"
+            rows={3}
+          />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Input
+              label="Category"
+              value={formData.category}
+              onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+              placeholder="e.g., Machine Learning"
+              required
+            />
+            <Select
+              label="File Type"
+              value={formData.fileType}
+              onChange={(e) => setFormData({ ...formData, fileType: e.target.value })}
+              options={[
+                { value: 'PDF', label: 'PDF Document' },
+                { value: 'DOC', label: 'Word Document' },
+                { value: 'PPT', label: 'PowerPoint' },
+                { value: 'XLS', label: 'Excel Spreadsheet' },
+              ]}
+            />
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Input
+              label="File URL"
+              value={formData.fileUrl}
+              onChange={(e) => setFormData({ ...formData, fileUrl: e.target.value })}
+              placeholder="Enter file URL or path"
+              required
+            />
+            <Input
+              label="File Size"
+              value={formData.fileSize}
+              onChange={(e) => setFormData({ ...formData, fileSize: e.target.value })}
+              placeholder="e.g., 2.5 MB"
+              required
+            />
+          </div>
+          <div className="flex gap-3 pt-4">
+            <Button type="button" variant="secondary" onClick={() => setIsModalOpen(false)} fullWidth>
+              Cancel
+            </Button>
+            <Button type="submit" fullWidth>
+              {editingResource ? 'Update Resource' : 'Upload Resource'}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+    </div>
+  );
+}

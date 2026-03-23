@@ -109,12 +109,12 @@ export default function App() {
   };
 
   return (
-    <Layout
-      title={getPageTitle()}
-      currentPage={currentPage}
-      onPageChange={setCurrentPage}
-    >
-      {renderPage()}
-    </Layout>
+  <Layout
+  title={getPageTitle()}
+  currentPage={currentPage}
+  onPageChange={setCurrentPage}
+  >
+    {renderPage()}
+  </Layout>
   );
 }

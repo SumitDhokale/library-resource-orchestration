@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Check, X, Clock, BookCopy, Search, Filter, AlertCircle } from 'lucide-react';
 import { useStore } from '../../store';
 import { Card } from '../../components/UI/Card';
@@ -6,15 +6,37 @@ import { Button } from '../../components/UI/Button';
 import { Badge } from '../../components/UI/Table';
 import { format, isPast, parseISO } from 'date-fns';
 import { cn } from '../../utils/cn';
+import { fetchTransactions, issueBook as issueBookService, returnBook as returnBookService, requestBook as requestBookService } from '../../services';
 
 interface TransactionsPageProps {
   canManage?: boolean;
 }
 
 export function TransactionsPage({ canManage = false }: TransactionsPageProps) {
-  const { transactions, users, books, returnBook, approveRequest, currentUser } = useStore();
+  const { transactions, users, books, returnBook, approveRequest, currentUser, setTransactions } = useStore();
   const [filter, setFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Load transactions from database
+  useEffect(() => {
+    const loadTransactions = async () => {
+      setIsLoading(true);
+      try {
+        const result = await fetchTransactions();
+        if (result.data) {
+          // Update store with real data from database
+          setTransactions(result.data);
+        }
+      } catch (error) {
+        console.error('Error loading transactions:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    loadTransactions();
+  }, [setTransactions]);
 
   // Filter transactions based on role
   const relevantTransactions = canManage 
@@ -47,19 +69,64 @@ export function TransactionsPage({ canManage = false }: TransactionsPageProps) {
     }
   };
 
-  const handleReturn = (transactionId: string) => {
+  const handleReturn = async (transactionId: string) => {
     if (confirm('Confirm book return?')) {
-      returnBook(transactionId);
+      try {
+        const result = await returnBookService(transactionId);
+        if (result.error) {
+          setMessage({ type: 'error', text: result.error });
+        } else {
+          returnBook(transactionId);
+          // Reload transactions to sync with database
+          const transactionsResult = await fetchTransactions();
+          if (transactionsResult.data) {
+            setTransactions(transactionsResult.data);
+          }
+          setMessage({ type: 'success', text: 'Book returned successfully!' });
+        }
+      } catch (error) {
+        setMessage({ type: 'error', text: 'Failed to return book' });
+        console.error('Error returning book:', error);
+      }
     }
   };
 
-  const handleApprove = (transactionId: string) => {
-    approveRequest(transactionId);
-    alert('Request approved! Book has been issued.');
+  const handleApprove = async (transactionId: string) => {
+    try {
+      // Get the transaction to find the book
+      const transaction = transactions.find(t => t.id === transactionId);
+      if (!transaction) return;
+
+      // Issue the book
+      const result = await issueBookService(transaction.userId, transaction.bookId);
+      if (result.error) {
+        setMessage({ type: 'error', text: result.error });
+      } else {
+        approveRequest(transactionId);
+        // Reload transactions to sync
+        const transactionsResult = await fetchTransactions();
+        if (transactionsResult.data) {
+          setTransactions(transactionsResult.data);
+        }
+        setMessage({ type: 'success', text: 'Request approved! Book issued successfully.' });
+      }
+    } catch (error) {
+      setMessage({ type: 'error', text: 'Failed to approve request' });
+      console.error('Error approving request:', error);
+    }
   };
 
   return (
     <div className="space-y-6">
+      {/* Message Display */}
+      {message && (
+        <Card className={cn(
+          'p-4 rounded-lg',
+          message.type === 'success' ? 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 text-green-800 dark:text-green-200' : 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-800 dark:text-red-200'
+        )}>
+          {message.text}
+        </Card>
+      )}
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>

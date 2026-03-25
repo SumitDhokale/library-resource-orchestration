@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Edit2, Trash2, Search, FileText, Download, Upload, Filter, Eye } from 'lucide-react';
 import { useStore } from '../../store';
 import { Card } from '../../components/UI/Card';
@@ -9,18 +9,22 @@ import { Badge } from '../../components/UI/Table';
 import type { DigitalResource } from '../../types';
 import { cn } from '../../utils/cn';
 import { format, parseISO } from 'date-fns';
+import { fetchDigitalResources, createDigitalResource, updateDigitalResource as updateResourceService, deleteDigitalResource as deleteResourceService } from '../../services';
 
 interface DigitalResourcesPageProps {
   canManage?: boolean;
 }
 
 export function DigitalResourcesPage({ canManage = false }: DigitalResourcesPageProps) {
-  const { digitalResources, addDigitalResource, updateDigitalResource, deleteDigitalResource, incrementDownload, currentUser, users } = useStore();
+  const { digitalResources, addDigitalResource, updateDigitalResource, deleteDigitalResource, incrementDownload, currentUser, users, setDigitalResources } = useStore();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingResource, setEditingResource] = useState<DigitalResource | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [viewingResource, setViewingResource] = useState<DigitalResource | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const [formData, setFormData] = useState({
     title: '',
@@ -30,6 +34,25 @@ export function DigitalResourcesPage({ canManage = false }: DigitalResourcesPage
     fileSize: '',
     category: '',
   });
+
+  // Load digital resources from database
+  useEffect(() => {
+    const loadResources = async () => {
+      setIsLoading(true);
+      try {
+        const result = await fetchDigitalResources();
+        if (result.data) {
+          // Update store with real data from database
+          setDigitalResources(result.data);
+        }
+      } catch (error) {
+        console.error('Error loading digital resources:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    loadResources();
+  }, [setDigitalResources]);
 
   const categories = useMemo(() => {
     const cats = new Set(digitalResources.map(r => r.category));
@@ -64,23 +87,61 @@ export function DigitalResourcesPage({ canManage = false }: DigitalResourcesPage
     setIsModalOpen(true);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (editingResource) {
-      updateDigitalResource(editingResource.id, formData);
-    } else {
-      addDigitalResource({
-        ...formData,
-        uploadedBy: currentUser?.id || '',
-      });
+    setIsSaving(true);
+    setMessage(null);
+
+    try {
+      if (editingResource) {
+        // Update existing resource
+        const result = await updateResourceService(editingResource.id, formData);
+        if (result.error) {
+          setMessage({ type: 'error', text: result.error });
+        } else {
+          updateDigitalResource(editingResource.id, result.data!);
+          setMessage({ type: 'success', text: 'Resource updated successfully!' });
+        }
+      } else {
+        // Create new resource
+        const result = await createDigitalResource({
+          ...formData,
+          uploadedBy: currentUser?.id || '',
+        });
+        if (result.error) {
+          setMessage({ type: 'error', text: result.error });
+        } else {
+          addDigitalResource(result.data!);
+          setMessage({ type: 'success', text: 'Resource created successfully!' });
+        }
+      }
+
+      if (!message?.type || message.type === 'success') {
+        setIsModalOpen(false);
+        setEditingResource(null);
+      }
+    } catch (error) {
+      setMessage({ type: 'error', text: 'An unexpected error occurred' });
+      console.error('Error saving resource:', error);
+    } finally {
+      setIsSaving(false);
     }
-    setIsModalOpen(false);
-    setEditingResource(null);
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (confirm('Are you sure you want to delete this resource?')) {
-      deleteDigitalResource(id);
+      try {
+        const result = await deleteResourceService(id);
+        if (result.error) {
+          setMessage({ type: 'error', text: result.error });
+        } else {
+          deleteDigitalResource(id);
+          setMessage({ type: 'success', text: 'Resource deleted successfully!' });
+        }
+      } catch (error) {
+        setMessage({ type: 'error', text: 'Failed to delete resource' });
+        console.error('Error deleting resource:', error);
+      }
     }
   };
 
@@ -101,6 +162,16 @@ export function DigitalResourcesPage({ canManage = false }: DigitalResourcesPage
 
   return (
     <div className="space-y-6">
+      {/* Message Display */}
+      {message && (
+        <Card className={cn(
+          'p-4 rounded-lg',
+          message.type === 'success' ? 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 text-green-800 dark:text-green-200' : 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-800 dark:text-red-200'
+        )}>
+          {message.text}
+        </Card>
+      )}
+
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
@@ -343,11 +414,11 @@ export function DigitalResourcesPage({ canManage = false }: DigitalResourcesPage
             />
           </div>
           <div className="flex gap-3 pt-4">
-            <Button type="button" variant="secondary" onClick={() => setIsModalOpen(false)} fullWidth>
+            <Button type="button" variant="secondary" onClick={() => setIsModalOpen(false)} fullWidth disabled={isSaving}>
               Cancel
             </Button>
-            <Button type="submit" fullWidth>
-              {editingResource ? 'Update Resource' : 'Upload Resource'}
+            <Button type="submit" fullWidth disabled={isSaving}>
+              {isSaving ? 'Uploading...' : (editingResource ? 'Update Resource' : 'Upload Resource')}
             </Button>
           </div>
         </form>

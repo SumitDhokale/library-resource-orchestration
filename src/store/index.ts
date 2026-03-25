@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { supabase } from '../supabaseClient';
 import type { User, Book, Transaction, DigitalResource, Notification, ActivityLog } from '../types';
+import { fetchBooks, fetchDigitalResources } from '../services';
 
 // Sample data
 const sampleUsers: User[] = [
@@ -223,7 +225,8 @@ interface StoreState {
   // Auth
   currentUser: User | null;
   isAuthenticated: boolean;
-  
+  authLoading: boolean;
+
   // Data
   users: User[];
   books: Book[];
@@ -231,15 +234,17 @@ interface StoreState {
   digitalResources: DigitalResource[];
   notifications: Notification[];
   activityLogs: ActivityLog[];
-  
+
   // UI State
   theme: 'light' | 'dark';
   sidebarOpen: boolean;
-  
+
   // Auth Actions
-  login: (email: string, password: string) => boolean;
-  logout: () => void;
-  register: (name: string, email: string, password: string) => boolean;
+  login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  logout: () => Promise<void>;
+  register: (name: string, email: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  initializeAuth: () => Promise<void>;
+  loadAppData: () => Promise<void>;
   
   // User Actions
   addUser: (user: Omit<User, 'id' | 'createdAt'>) => void;
@@ -247,17 +252,20 @@ interface StoreState {
   deleteUser: (id: string) => void;
   
   // Book Actions
+  setBooks: (books: Book[]) => void;
   addBook: (book: Omit<Book, 'id' | 'createdAt'>) => void;
   updateBook: (id: string, updates: Partial<Book>) => void;
   deleteBook: (id: string) => void;
   
   // Transaction Actions
+  setTransactions: (transactions: Transaction[]) => void;
   issueBook: (userId: string, bookId: string) => boolean;
   returnBook: (transactionId: string) => void;
   requestBook: (userId: string, bookId: string) => void;
   approveRequest: (transactionId: string) => void;
   
   // Digital Resource Actions
+  setDigitalResources: (resources: DigitalResource[]) => void;
   addDigitalResource: (resource: Omit<DigitalResource, 'id' | 'createdAt' | 'downloads'>) => void;
   updateDigitalResource: (id: string, updates: Partial<DigitalResource>) => void;
   deleteDigitalResource: (id: string) => void;
@@ -281,6 +289,7 @@ export const useStore = create<StoreState>()(
       // Initial State
       currentUser: null,
       isAuthenticated: false,
+      authLoading: true, // Start with loading true
       users: sampleUsers,
       books: sampleBooks,
       transactions: sampleTransactions,
@@ -291,33 +300,196 @@ export const useStore = create<StoreState>()(
       sidebarOpen: true,
       
       // Auth Actions
-      login: (email, password) => {
-        const user = get().users.find(u => u.email === email && u.password === password);
-        if (user) {
-          set({ currentUser: user, isAuthenticated: true });
-          return true;
+      login: async (email, password) => {
+        // Special test login for development
+        if (email === 'test@admin.com' && password === 'test123') {
+          const testUser: User = {
+            id: '550e8400-e29b-41d4-a716-446655440000',
+            name: 'Test Admin',
+            email: 'test@admin.com',
+            role: 'admin',
+            createdAt: new Date().toISOString(),
+          };
+          set({ currentUser: testUser, isAuthenticated: true });
+          return { success: true };
         }
-        return false;
+
+        try {
+          const { data, error } = await supabase.auth.signInWithPassword({
+            email,
+            password,
+          });
+
+          if (error) {
+            return { success: false, error: error.message };
+          }
+
+          if (data.user) {
+            // Fetch user profile with role
+            const { data: profile, error: profileError } = await supabase
+              .from('user_profiles')
+              .select('*')
+              .eq('id', data.user.id)
+              .single();
+
+            if (profileError) {
+              console.error('Error fetching user profile:', profileError);
+              return { success: false, error: 'Failed to load user profile' };
+            }
+
+            const user: User = {
+              id: data.user.id,
+              name: profile.name,
+              email: data.user.email!,
+              role: profile.role,
+              createdAt: data.user.created_at,
+              avatar: profile.avatar,
+            };
+
+            set({ currentUser: user, isAuthenticated: true });
+            return { success: true };
+          }
+
+          return { success: false, error: 'Login failed' };
+        } catch (error) {
+          console.error('Login error:', error);
+          return { success: false, error: 'An unexpected error occurred' };
+        }
       },
-      
-      logout: () => {
-        set({ currentUser: null, isAuthenticated: false });
+
+      logout: async () => {
+        try {
+          await supabase.auth.signOut();
+          set({ currentUser: null, isAuthenticated: false });
+        } catch (error) {
+          console.error('Logout error:', error);
+        }
       },
-      
-      register: (name, email, password) => {
-        const exists = get().users.find(u => u.email === email);
-        if (exists) return false;
-        
-        const newUser: User = {
-          id: Date.now().toString(),
-          name,
-          email,
-          password,
-          role: 'user',
-          createdAt: new Date().toISOString().split('T')[0],
-        };
-        set(state => ({ users: [...state.users, newUser] }));
-        return true;
+
+      register: async (name, email, password) => {
+        try {
+          const { data, error } = await supabase.auth.signUp({
+            email,
+            password,
+          });
+
+          if (error) {
+            return { success: false, error: error.message };
+          }
+
+          if (data.user) {
+            // Create user profile with default role 'user'
+            const { error: profileError } = await supabase
+              .from('user_profiles')
+              .insert({
+                id: data.user.id,
+                name,
+                email: data.user.email!,
+                role: 'user',
+              });
+
+            if (profileError) {
+              console.error('Error creating user profile:', profileError);
+              return { success: false, error: 'Failed to create user profile' };
+            }
+
+            return { success: true };
+          }
+
+          return { success: false, error: 'Registration failed' };
+        } catch (error) {
+          console.error('Registration error:', error);
+          return { success: false, error: 'An unexpected error occurred' };
+        }
+      },
+
+      initializeAuth: async () => {
+        try {
+          const { data: { session }, error } = await supabase.auth.getSession();
+
+          if (error) {
+            console.error('Error getting session:', error);
+            set({ authLoading: false });
+            return;
+          }
+
+          if (session?.user) {
+            // Fetch user profile
+            const { data: profile, error: profileError } = await supabase
+              .from('user_profiles')
+              .select('*')
+              .eq('id', session.user.id)
+              .single();
+
+            if (profileError) {
+              console.error('Error fetching user profile:', profileError);
+              set({ authLoading: false });
+              return;
+            }
+
+            const user: User = {
+              id: session.user.id,
+              name: profile.name,
+              email: session.user.email!,
+              role: profile.role,
+              createdAt: session.user.created_at,
+              avatar: profile.avatar,
+            };
+
+            set({ currentUser: user, isAuthenticated: true, authLoading: false });
+          } else {
+            set({ authLoading: false });
+          }
+
+          // Listen for auth changes
+          supabase.auth.onAuthStateChange(async (event, session) => {
+            if (event === 'SIGNED_IN' && session?.user) {
+              // Fetch user profile
+              const { data: profile, error: profileError } = await supabase
+                .from('user_profiles')
+                .select('*')
+                .eq('id', session.user.id)
+                .single();
+
+              if (!profileError && profile) {
+                const user: User = {
+                  id: session.user.id,
+                  name: profile.name,
+                  email: session.user.email!,
+                  role: profile.role,
+                  createdAt: session.user.created_at,
+                  avatar: profile.avatar,
+                };
+
+                set({ currentUser: user, isAuthenticated: true, authLoading: false });
+              }
+            } else if (event === 'SIGNED_OUT') {
+              set({ currentUser: null, isAuthenticated: false, authLoading: false });
+            }
+          });
+        } catch (error) {
+          console.error('Auth initialization error:', error);
+          set({ authLoading: false });
+        }
+      },
+
+      // Load app data from Supabase
+      loadAppData: async () => {
+        try {
+          // Load books
+          const booksResult = await fetchBooks();
+          if (booksResult.data) {
+            set({ books: booksResult.data });
+          }
+
+          // Load digital resources
+          const resourcesResult = await fetchDigitalResources();
+          if (resourcesResult.data) {
+            set({ digitalResources: resourcesResult.data });
+          }
+        } catch (error) {
+          console.error('Error loading app data:', error);
+        }
       },
       
       // User Actions
@@ -343,13 +515,24 @@ export const useStore = create<StoreState>()(
       },
       
       // Book Actions
+      setBooks: (books) => {
+        set({ books });
+      },
+      
       addBook: (book) => {
-        const newBook: Book = {
-          ...book,
-          id: Date.now().toString(),
-          createdAt: new Date().toISOString().split('T')[0],
-        };
-        set(state => ({ books: [...state.books, newBook] }));
+        // If book already has an ID (from database), preserve it
+        if (book.id && book.id.length > 10) {
+          // UUID format (longer than timestamp string)
+          set(state => ({ books: [...state.books, book as Book] }));
+        } else {
+          // Local book - generate ID
+          const newBook: Book = {
+            ...book,
+            id: Date.now().toString(),
+            createdAt: new Date().toISOString().split('T')[0],
+          };
+          set(state => ({ books: [...state.books, newBook] }));
+        }
       },
       
       updateBook: (id, updates) => {
@@ -365,6 +548,10 @@ export const useStore = create<StoreState>()(
       },
       
       // Transaction Actions
+      setTransactions: (transactions) => {
+        set({ transactions });
+      },
+      
       issueBook: (userId, bookId) => {
         const book = get().books.find(b => b.id === bookId);
         if (!book || book.availableCopies <= 0) return false;
@@ -474,14 +661,25 @@ export const useStore = create<StoreState>()(
       },
       
       // Digital Resource Actions
+      setDigitalResources: (resources) => {
+        set({ digitalResources: resources });
+      },
+      
       addDigitalResource: (resource) => {
-        const newResource: DigitalResource = {
-          ...resource,
-          id: Date.now().toString(),
-          createdAt: new Date().toISOString().split('T')[0],
-          downloads: 0,
-        };
-        set(state => ({ digitalResources: [...state.digitalResources, newResource] }));
+        // If resource already has an ID (from database), preserve it
+        if (resource.id && resource.id.length > 10) {
+          // UUID format
+          set(state => ({ digitalResources: [...state.digitalResources, resource as DigitalResource] }));
+        } else {
+          // Local resource - generate ID
+          const newResource: DigitalResource = {
+            ...resource,
+            id: Date.now().toString(),
+            createdAt: new Date().toISOString().split('T')[0],
+            downloads: 0,
+          };
+          set(state => ({ digitalResources: [...state.digitalResources, newResource] }));
+        }
       },
       
       updateDigitalResource: (id, updates) => {

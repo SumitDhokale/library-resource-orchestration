@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Plus, Edit2, Trash2, Search, BookOpen, Filter, Grid, List } from 'lucide-react';
 import { useStore } from '../../store';
 import { Card } from '../../components/UI/Card';
@@ -8,18 +8,22 @@ import { Input, Textarea } from '../../components/UI/Input';
 import { Badge } from '../../components/UI/Table';
 import type { Book } from '../../types';
 import { cn } from '../../utils/cn';
+import { fetchBooks, searchBooks, createBook, updateBook as updateBookService, deleteBook as deleteBookService } from '../../services';
 
 interface BooksPageProps {
   canEdit?: boolean;
 }
 
 export function BooksPage({ canEdit = false }: BooksPageProps) {
-  const { books, addBook, updateBook, deleteBook, currentUser, issueBook, requestBook, transactions } = useStore();
+  const { books, addBook, updateBook, deleteBook, currentUser, issueBook, requestBook, transactions, setBooks } = useStore();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingBook, setEditingBook] = useState<Book | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [isLoading, setIsLoading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const [formData, setFormData] = useState({
     title: '',
@@ -29,6 +33,25 @@ export function BooksPage({ canEdit = false }: BooksPageProps) {
     description: '',
     totalCopies: 1,
   });
+
+  // Load books from database
+  useEffect(() => {
+    const loadBooks = async () => {
+      setIsLoading(true);
+      try {
+        const result = await fetchBooks();
+        if (result.data) {
+          // Update store with real data from database
+          setBooks(result.data);
+        }
+      } catch (error) {
+        console.error('Error loading books:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    loadBooks();
+  }, [setBooks]);
 
   const categories = useMemo(() => {
     const cats = new Set(books.map(b => b.category));
@@ -64,28 +87,69 @@ export function BooksPage({ canEdit = false }: BooksPageProps) {
     setIsModalOpen(true);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (editingBook) {
-      updateBook(editingBook.id, {
-        ...formData,
-        availableCopies: editingBook.availableCopies + (formData.totalCopies - editingBook.totalCopies),
-      });
-    } else {
-      addBook({
-        ...formData,
-        availableCopies: formData.totalCopies,
-        availabilityStatus: 'available',
-        addedBy: currentUser?.id || '',
-      });
+    setIsSaving(true);
+    setMessage(null);
+
+    try {
+      if (editingBook) {
+        // Update existing book
+        const result = await updateBookService(editingBook.id, {
+          ...formData,
+          availableCopies: editingBook.availableCopies + (formData.totalCopies - editingBook.totalCopies),
+          availabilityStatus: (editingBook.availableCopies + (formData.totalCopies - editingBook.totalCopies)) === 0 ? 'issued' : 'available',
+        });
+
+        if (result.error) {
+          setMessage({ type: 'error', text: result.error });
+        } else {
+          updateBook(editingBook.id, result.data!);
+          setMessage({ type: 'success', text: 'Book updated successfully!' });
+        }
+      } else {
+        // Create new book
+        const result = await createBook({
+          ...formData,
+          availableCopies: formData.totalCopies,
+          availabilityStatus: 'available',
+          addedBy: currentUser?.id || '',
+        });
+
+        if (result.error) {
+          setMessage({ type: 'error', text: result.error });
+        } else {
+          addBook(result.data!);
+          setMessage({ type: 'success', text: 'Book created successfully!' });
+        }
+      }
+
+      if (!message?.type || message.type === 'success') {
+        setIsModalOpen(false);
+        setEditingBook(null);
+      }
+    } catch (error) {
+      setMessage({ type: 'error', text: 'An unexpected error occurred' });
+      console.error('Error saving book:', error);
+    } finally {
+      setIsSaving(false);
     }
-    setIsModalOpen(false);
-    setEditingBook(null);
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (confirm('Are you sure you want to delete this book?')) {
-      deleteBook(id);
+      try {
+        const result = await deleteBookService(id);
+        if (result.error) {
+          setMessage({ type: 'error', text: result.error });
+        } else {
+          deleteBook(id);
+          setMessage({ type: 'success', text: 'Book deleted successfully!' });
+        }
+      } catch (error) {
+        setMessage({ type: 'error', text: 'Failed to delete book' });
+        console.error('Error deleting book:', error);
+      }
     }
   };
 
@@ -131,6 +195,16 @@ export function BooksPage({ canEdit = false }: BooksPageProps) {
 
   return (
     <div className="space-y-6">
+      {/* Message Display */}
+      {message && (
+        <Card className={cn(
+          'p-4 rounded-lg',
+          message.type === 'success' ? 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 text-green-800 dark:text-green-200' : 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-800 dark:text-red-200'
+        )}>
+          {message.text}
+        </Card>
+      )}
+
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
@@ -357,11 +431,11 @@ export function BooksPage({ canEdit = false }: BooksPageProps) {
             rows={3}
           />
           <div className="flex gap-3 pt-4">
-            <Button type="button" variant="secondary" onClick={() => setIsModalOpen(false)} fullWidth>
+            <Button type="button" variant="secondary" onClick={() => setIsModalOpen(false)} fullWidth disabled={isSaving}>
               Cancel
             </Button>
-            <Button type="submit" fullWidth>
-              {editingBook ? 'Update Book' : 'Add Book'}
+            <Button type="submit" fullWidth disabled={isSaving}>
+              {isSaving ? 'Saving...' : (editingBook ? 'Update Book' : 'Add Book')}
             </Button>
           </div>
         </form>

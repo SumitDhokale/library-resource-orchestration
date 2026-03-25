@@ -27,6 +27,7 @@ export function Sidebar({ currentPage, onPageChange }: SidebarProps) {
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'users', label: 'Manage Users', icon: UserCog },
     { id: 'books', label: 'Books Catalog', icon: BookOpen },
+    { id: 'resources', label: 'Digital Resources', icon: FileText },
     { id: 'transactions', label: 'Transactions', icon: BookCopy },
     { id: 'activity', label: 'Activity Logs', icon: Activity },
     { id: 'settings', label: 'Settings', icon: Settings },

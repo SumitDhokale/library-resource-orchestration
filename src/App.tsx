@@ -14,8 +14,20 @@ import { SettingsPage } from './pages/shared/SettingsPage';
 import { HistoryPage } from './pages/shared/HistoryPage';
 
 export default function App() {
-  const { isAuthenticated, currentUser, theme } = useStore();
+  const { isAuthenticated, currentUser, theme, authLoading, initializeAuth, loadAppData } = useStore();
   const [currentPage, setCurrentPage] = useState('dashboard');
+
+  // Initialize auth on app start
+  useEffect(() => {
+    initializeAuth();
+  }, [initializeAuth]);
+
+  // Load app data when authenticated
+  useEffect(() => {
+    if (isAuthenticated && !authLoading) {
+      loadAppData();
+    }
+  }, [isAuthenticated, authLoading, loadAppData]);
 
   // Apply theme to document
   useEffect(() => {
@@ -32,6 +44,18 @@ export default function App() {
       setCurrentPage('dashboard');
     }
   }, [isAuthenticated]);
+
+  // Show loading while auth is initializing
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto mb-4"></div>
+          <p className="text-white">Loading...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!isAuthenticated) {
     return <LoginPage />;
@@ -66,6 +90,8 @@ export default function App() {
           return <TransactionsPage canManage />;
         case 'activity':
           return <ActivityLogs />;
+        case 'resources':
+          return <DigitalResourcesPage canManage />;
         case 'settings':
           return <SettingsPage />;
         default:

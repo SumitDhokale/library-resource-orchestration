@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Edit2, Trash2, Search, UserPlus } from 'lucide-react';
 import { useStore } from '../../store';
+import { fetchAllUsers } from '../../services';
 import { Card } from '../../components/UI/Card';
 import { Button } from '../../components/UI/Button';
 import { Modal } from '../../components/UI/Modal';
@@ -9,11 +10,21 @@ import { Table, Badge } from '../../components/UI/Table';
 import type { User, UserRole } from '../../types';
 
 export function ManageUsers() {
-  const { users, addUser, updateUser, deleteUser, currentUser } = useStore();
+  const { users, setUsers, addUser, updateUser, deleteUser, currentUser } = useStore();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState<string>('all');
+
+  useEffect(() => {
+    async function loadUsers() {
+      const result = await fetchAllUsers();
+      if (result.data) {
+        setUsers(result.data);
+      }
+    }
+    loadUsers();
+  }, [setUsers]);
 
   const [formData, setFormData] = useState({
     name: '',

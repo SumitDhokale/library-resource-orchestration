@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { supabase } from '../supabaseClient';
 import type { User, Book, Transaction, DigitalResource, Notification, ActivityLog } from '../types';
-import { fetchBooks, fetchDigitalResources } from '../services';
+import { fetchBooks, fetchDigitalResources, fetchAllUsers } from '../services';
 
 // Sample data
 const sampleUsers: User[] = [
@@ -251,6 +251,9 @@ interface StoreState {
   updateUser: (id: string, updates: Partial<User>) => void;
   deleteUser: (id: string) => void;
   
+  // User Actions
+  setUsers: (users: User[]) => void;
+
   // Book Actions
   setBooks: (books: Book[]) => void;
   addBook: (book: Omit<Book, 'id' | 'createdAt'>) => void;
@@ -476,6 +479,12 @@ export const useStore = create<StoreState>()(
       // Load app data from Supabase
       loadAppData: async () => {
         try {
+          // Load users (from DB, not only sample data)
+          const usersResult = await fetchAllUsers();
+          if (usersResult.data) {
+            set({ users: usersResult.data });
+          }
+
           // Load books
           const booksResult = await fetchBooks();
           if (booksResult.data) {
@@ -493,6 +502,10 @@ export const useStore = create<StoreState>()(
       },
       
       // User Actions
+      setUsers: (users) => {
+        set({ users });
+      },
+
       addUser: (user) => {
         const newUser: User = {
           ...user,

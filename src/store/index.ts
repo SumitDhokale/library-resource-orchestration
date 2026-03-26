@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { supabase } from '../supabaseClient';
 import type { User, Book, Transaction, DigitalResource, Notification, ActivityLog } from '../types';
-import { fetchBooks, fetchDigitalResources, fetchAllUsers } from '../services';
+import { fetchBooks, fetchDigitalResources, fetchAllUsers, fetchTransactions } from '../services';
 
 // Sample data
 const sampleUsers: User[] = [
@@ -481,19 +481,25 @@ export const useStore = create<StoreState>()(
         try {
           // Load users (from DB, not only sample data)
           const usersResult = await fetchAllUsers();
-          if (usersResult.data) {
+          if (usersResult.data && usersResult.data.length > 0) {
             set({ users: usersResult.data });
           }
 
           // Load books
           const booksResult = await fetchBooks();
-          if (booksResult.data) {
+          if (booksResult.data && booksResult.data.length > 0) {
             set({ books: booksResult.data });
+          }
+
+          // Load transactions
+          const transactionsResult = await fetchTransactions();
+          if (transactionsResult.data && transactionsResult.data.length > 0) {
+            set({ transactions: transactionsResult.data });
           }
 
           // Load digital resources
           const resourcesResult = await fetchDigitalResources();
-          if (resourcesResult.data) {
+          if (resourcesResult.data && resourcesResult.data.length > 0) {
             set({ digitalResources: resourcesResult.data });
           }
         } catch (error) {
@@ -646,6 +652,12 @@ export const useStore = create<StoreState>()(
         set(state => ({
           transactions: [...state.transactions, transaction],
         }));
+
+        get().addActivityLog({
+          userId,
+          action: 'Book Request',
+          details: `User requested book ID ${bookId}`,
+        });
       },
       
       approveRequest: (transactionId) => {
@@ -671,6 +683,12 @@ export const useStore = create<StoreState>()(
               : b
           ),
         }));
+
+        get().addActivityLog({
+          userId: transaction.userId,
+          action: 'Book Issued',
+          details: `${book?.title ?? 'Unknown Book'} issued to user ID ${transaction.userId}`,
+        });
       },
       
       // Digital Resource Actions

@@ -49,13 +49,6 @@ export function LoginPage() {
     }
   };
 
-  const demoCredentials = [
-    { role: 'Test Admin', email: 'test@admin.com', password: 'test123', color: 'from-purple-500 to-pink-600' },
-    { role: 'Admin', email: 'admin@library.com', password: 'admin123', color: 'from-red-500 to-rose-600' },
-    { role: 'Librarian', email: 'librarian@library.com', password: 'librarian123', color: 'from-amber-500 to-orange-600' },
-    { role: 'User', email: 'sumit@student.com', password: 'user123', color: 'from-emerald-500 to-teal-600' },
-  ];
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex">
       {/* Left Side - Branding */}
@@ -236,36 +229,6 @@ export function LoginPage() {
               </button>
             </div>
 
-            {/* Demo Credentials */}
-            <div className="mt-8 pt-6 border-t border-white/10">
-              <p className="text-sm text-indigo-300 text-center mb-4">Quick Demo Login</p>
-              <div className="grid gap-2">
-                {demoCredentials.map((cred) => (
-                  <button
-                    key={cred.role}
-                    type="button"
-                    onClick={() => {
-                      setEmail(cred.email);
-                      setPassword(cred.password);
-                      setIsLogin(true);
-                    }}
-                    className={cn(
-                      'flex items-center justify-between px-4 py-2.5 rounded-xl',
-                      'bg-white/5 hover:bg-white/10 border border-white/10',
-                      'transition-all duration-200 group'
-                    )}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className={cn('w-3 h-3 rounded-full bg-gradient-to-r', cred.color)} />
-                      <span className="text-sm text-white font-medium">{cred.role}</span>
-                    </div>
-                    <span className="text-xs text-indigo-300 group-hover:text-white transition-colors">
-                      Click to fill
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
           </div>
 
           <p className="text-center text-indigo-300/60 text-xs mt-6">

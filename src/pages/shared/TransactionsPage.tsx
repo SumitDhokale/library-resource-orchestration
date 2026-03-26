@@ -25,8 +25,8 @@ export function TransactionsPage({ canManage = false }: TransactionsPageProps) {
       setIsLoading(true);
       try {
         const result = await fetchTransactions();
-        if (result.data) {
-          // Update store with real data from database
+        if (result.data && result.data.length > 0) {
+          // Update store with real data from database (only when there are records)
           setTransactions(result.data);
         }
       } catch (error) {

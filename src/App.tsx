@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { supabase } from './supabaseClient';
 import { useStore } from './store';
 import { LoginPage } from './pages/Login';
 import { Layout } from './components/Layout/Layout';
@@ -37,6 +38,33 @@ export default function App() {
       document.documentElement.classList.remove('dark');
     }
   }, [theme]);
+
+  // Real-time updates for cross-device transaction/activity sync
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const txnChannel = supabase
+      .channel('realtime-transactions')
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'transactions',
+      }, () => {
+        loadAppData();
+      })
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'activity_logs',
+      }, () => {
+        loadAppData();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(txnChannel);
+    };
+  }, [isAuthenticated, loadAppData]);
 
   // Reset to dashboard on login
   useEffect(() => {

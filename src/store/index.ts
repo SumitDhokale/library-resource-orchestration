@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { supabase } from '../supabaseClient';
 import type { User, Book, Transaction, DigitalResource, Notification, ActivityLog } from '../types';
-import { fetchBooks, fetchDigitalResources, fetchAllUsers, fetchTransactions } from '../services';
+import { fetchBooks, fetchDigitalResources, fetchAllUsers, fetchTransactions, updateTransactionStatus } from '../services';
 
 // Sample data
 const sampleUsers: User[] = [
@@ -660,13 +660,21 @@ export const useStore = create<StoreState>()(
         });
       },
       
-      approveRequest: (transactionId) => {
+      approveRequest: async (transactionId) => {
         const transaction = get().transactions.find(t => t.id === transactionId);
         if (!transaction) return;
         
         const book = get().books.find(b => b.id === transaction.bookId);
         if (!book || book.availableCopies <= 0) return;
-        
+
+        // Update transaction status in DB
+        const result = await updateTransactionStatus(transactionId, 'issued');
+        if (result.error) {
+          console.error('Error updating transaction status:', result.error);
+          return;
+        }
+
+        // Update local state
         set(state => ({
           transactions: state.transactions.map(t => 
             t.id === transactionId 

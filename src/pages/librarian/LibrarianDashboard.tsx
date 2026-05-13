@@ -4,13 +4,14 @@ import { Card, StatCard } from '../../components/UI/Card';
 import { Badge } from '../../components/UI/Table';
 import { Button } from '../../components/UI/Button';
 import { format, parseISO, isPast } from 'date-fns';
+import { fetchTransactions } from '../../services';
 
 interface LibrarianDashboardProps {
   onPageChange: (page: string) => void;
 }
 
 export function LibrarianDashboard({ onPageChange }: LibrarianDashboardProps) {
-  const { books, transactions, digitalResources, users, activityLogs, approveRequest } = useStore();
+  const { books, transactions, digitalResources, users, activityLogs, approveRequest, loadAppData, setTransactions } = useStore();
 
   const totalBooks = books.length;
   const issuedBooks = transactions.filter(t => t.status === 'issued').length;
@@ -20,9 +21,24 @@ export function LibrarianDashboard({ onPageChange }: LibrarianDashboardProps) {
 
   const recentActivities = activityLogs.slice(0, 4);
 
-  const handleApproveRequest = (transactionId: string) => {
-    approveRequest(transactionId);
-    alert('Request approved!');
+  const handleApproveRequest = async (transactionId: string) => {
+    const transaction = transactions.find(t => t.id === transactionId);
+    if (!transaction) {
+      alert('Request not found');
+      return;
+    }
+
+    // Only call approveRequest - it handles updating the status from 'requested' to 'issued'
+    // Do NOT call issueBookService as that creates a duplicate transaction
+    await approveRequest(transactionId);
+    
+    // Force refresh transactions to ensure UI updates immediately
+    const transactionsResult = await fetchTransactions();
+    if (transactionsResult.data) {
+      setTransactions(transactionsResult.data);
+    }
+    
+    alert('Request approved and saved to database!');
   };
 
   return (

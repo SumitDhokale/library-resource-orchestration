@@ -317,7 +317,7 @@ export function TransactionsPage({ canManage = false }: TransactionsPageProps) {
                         </div>
                       </div>
                     </div>
-                    {transaction.status === 'issued' && canManage && (
+                    {transaction.status === 'issued' && (canManage || (!canManage && transaction.userId === currentUser?.id)) && (
                       <Button 
                         size="sm" 
                         variant="secondary"

@@ -265,3 +265,36 @@ export async function requestBook(userId: string, bookId: string): Promise<{ dat
     return { data: null, error: 'Failed to request book' };
   }
 }
+
+// Update transaction status
+export async function updateTransactionStatus(transactionId: string, status: string): Promise<{ data: Transaction | null; error: string | null }> {
+  try {
+    const { data, error } = await supabase
+      .from('transactions')
+      .update({ status })
+      .eq('id', transactionId)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error updating transaction status:', error);
+      return { data: null, error: error.message };
+    }
+
+    const transaction: Transaction = {
+      id: data.id,
+      userId: data.user_id,
+      bookId: data.book_id,
+      issueDate: data.issue_date,
+      dueDate: data.due_date,
+      returnDate: data.return_date,
+      status: data.status,
+      fine: data.fine,
+    };
+
+    return { data: transaction, error: null };
+  } catch (error) {
+    console.error('Exception updating transaction status:', error);
+    return { data: null, error: 'Failed to update transaction status' };
+  }
+}

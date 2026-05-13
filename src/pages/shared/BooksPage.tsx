@@ -8,14 +8,14 @@ import { Input, Textarea } from '../../components/UI/Input';
 import { Badge } from '../../components/UI/Table';
 import type { Book } from '../../types';
 import { cn } from '../../utils/cn';
-import { fetchBooks, searchBooks, createBook, updateBook as updateBookService, deleteBook as deleteBookService } from '../../services';
+import { fetchBooks, searchBooks, createBook, updateBook as updateBookService, deleteBook as deleteBookService, issueBook as issueBookService, requestBook as requestBookService, fetchUserTransactions } from '../../services';
 
 interface BooksPageProps {
   canEdit?: boolean;
 }
 
 export function BooksPage({ canEdit = false }: BooksPageProps) {
-  const { books, addBook, updateBook, deleteBook, currentUser, issueBook, requestBook, transactions, setBooks } = useStore();
+  const { books, addBook, updateBook, deleteBook, currentUser, issueBook, requestBook, transactions, setBooks, loadAppData } = useStore();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingBook, setEditingBook] = useState<Book | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -153,25 +153,49 @@ export function BooksPage({ canEdit = false }: BooksPageProps) {
     }
   };
 
-  const handleBorrowRequest = (bookId: string) => {
+  const handleBorrowRequest = async (bookId: string) => {
     if (!currentUser) return;
-    
+
+    // Refresh data to ensure latest transactions
+    await loadAppData();
+
+    // Fetch latest user transactions from DB to ensure we have the most current data
+    const userTransactionsResult = await fetchUserTransactions(currentUser.id);
+    let userTransactions = transactions.filter(t => t.userId === currentUser.id);
+    if (userTransactionsResult.data) {
+      userTransactions = userTransactionsResult.data;
+    }
+
     // Check if user already has this book
-    const existingTransaction = transactions.find(
-      t => t.userId === currentUser.id && t.bookId === bookId && (t.status === 'issued' || t.status === 'requested')
+    const existingTransaction = userTransactions.find(
+      t => t.bookId === bookId && (t.status === 'issued' || t.status === 'requested')
     );
-    
+
     if (existingTransaction) {
       alert('You already have this book or a pending request for it.');
       return;
     }
-    
+
     if (currentUser.role === 'user') {
-      requestBook(currentUser.id, bookId);
-      alert('Book request submitted! A librarian will approve your request.');
+      const result = await requestBookService(currentUser.id, bookId);
+      if (result.error) {
+        alert('Failed to request book: ' + result.error);
+      } else {
+        // Add the DB transaction to local state with correct ID
+        setTransactions([...transactions, result.data!]);
+        await loadAppData();
+        alert('Book request submitted! A librarian will approve your request.');
+      }
     } else {
-      issueBook(currentUser.id, bookId);
-      alert('Book issued successfully!');
+      const result = await issueBookService(currentUser.id, bookId);
+      if (result.error) {
+        alert('Failed to issue book: ' + result.error);
+      } else {
+        // Add the DB transaction to local state with correct ID
+        setTransactions([...transactions, result.data!]);
+        await loadAppData();
+        alert('Book issued successfully!');
+      }
     }
   };
 

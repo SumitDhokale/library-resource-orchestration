@@ -1,9 +1,4 @@
--- Library Resource Orchestration System Database Schema
--- Run this in your Supabase SQL Editor
 
--- Note: Removed ALTER DATABASE command as it requires superuser privileges in Supabase
-
--- Create user_profiles table (extends auth.users)
 CREATE TABLE user_profiles (
   id UUID REFERENCES auth.users(id) ON DELETE CASCADE PRIMARY KEY,
   name TEXT NOT NULL,
@@ -14,7 +9,6 @@ CREATE TABLE user_profiles (
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
 
--- Create books table
 CREATE TABLE books (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   title TEXT NOT NULL,
@@ -31,7 +25,6 @@ CREATE TABLE books (
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
 
--- Create transactions table
 CREATE TABLE transactions (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   user_id UUID REFERENCES user_profiles(id) ON DELETE CASCADE NOT NULL,
@@ -45,7 +38,6 @@ CREATE TABLE transactions (
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
 
--- Create digital_resources table
 CREATE TABLE digital_resources (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   title TEXT NOT NULL,
@@ -60,7 +52,6 @@ CREATE TABLE digital_resources (
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
 
--- Create notifications table
 CREATE TABLE notifications (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   user_id UUID REFERENCES user_profiles(id) ON DELETE CASCADE NOT NULL,
@@ -70,7 +61,6 @@ CREATE TABLE notifications (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
 
--- Create activity_logs table
 CREATE TABLE activity_logs (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   user_id UUID REFERENCES user_profiles(id) ON DELETE CASCADE NOT NULL,
@@ -79,7 +69,6 @@ CREATE TABLE activity_logs (
   timestamp TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
 
--- Create book_reserves table for reservation system
 CREATE TABLE book_reserves (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   user_id UUID REFERENCES user_profiles(id) ON DELETE CASCADE NOT NULL,
@@ -88,10 +77,9 @@ CREATE TABLE book_reserves (
   status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'cancelled')),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
-  UNIQUE(user_id, book_id, status) -- Prevent duplicate active reservations
+  UNIQUE(user_id, book_id, status) 
 );
 
--- Enable Row Level Security on all tables
 ALTER TABLE user_profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE books ENABLE ROW LEVEL SECURITY;
 ALTER TABLE transactions ENABLE ROW LEVEL SECURITY;
@@ -100,7 +88,6 @@ ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE activity_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE book_reserves ENABLE ROW LEVEL SECURITY;
 
--- RLS Policies for user_profiles
 CREATE POLICY "Users can view their own profile" ON user_profiles
   FOR SELECT USING (auth.uid() = id);
 
@@ -126,7 +113,6 @@ CREATE POLICY "Admins can update all profiles" ON user_profiles
     )
   );
 
--- RLS Policies for books (everyone can read, librarians/admins can modify)
 CREATE POLICY "Anyone can view books" ON books FOR SELECT USING (true);
 
 CREATE POLICY "Librarians and admins can insert books" ON books
@@ -153,7 +139,6 @@ CREATE POLICY "Admins can delete books" ON books
     )
   );
 
--- RLS Policies for transactions
 CREATE POLICY "Users can view their own transactions" ON transactions
   FOR SELECT USING (auth.uid() = user_id);
 
@@ -173,7 +158,6 @@ CREATE POLICY "Librarians and admins can manage transactions" ON transactions
     )
   );
 
--- RLS Policies for digital_resources
 CREATE POLICY "Anyone can view digital resources" ON digital_resources FOR SELECT USING (true);
 
 CREATE POLICY "Librarians and admins can manage digital resources" ON digital_resources
@@ -184,7 +168,6 @@ CREATE POLICY "Librarians and admins can manage digital resources" ON digital_re
     )
   );
 
--- RLS Policies for notifications
 CREATE POLICY "Users can view their own notifications" ON notifications
   FOR SELECT USING (auth.uid() = user_id);
 
@@ -204,7 +187,6 @@ CREATE POLICY "Admins can view all activity logs" ON activity_logs
 
 CREATE POLICY "System can insert activity logs" ON activity_logs FOR INSERT WITH CHECK (true);
 
--- RLS Policies for book_reserves
 CREATE POLICY "Users can view their own reservations" ON book_reserves
   FOR SELECT USING (auth.uid() = user_id);
 
@@ -222,7 +204,6 @@ CREATE POLICY "Librarians and admins can manage reservations" ON book_reserves
     )
   );
 
--- Create function to update updated_at timestamp
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -231,7 +212,6 @@ BEGIN
 END;
 $$ language 'plpgsql';
 
--- Create triggers for updated_at
 CREATE TRIGGER update_user_profiles_updated_at BEFORE UPDATE ON user_profiles
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
@@ -247,7 +227,6 @@ CREATE TRIGGER update_digital_resources_updated_at BEFORE UPDATE ON digital_reso
 CREATE TRIGGER update_book_reserves_updated_at BEFORE UPDATE ON book_reserves
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
--- Create indexes for better performance
 CREATE INDEX idx_books_category ON books(category);
 CREATE INDEX idx_books_availability_status ON books(availability_status);
 CREATE INDEX idx_transactions_user_id ON transactions(user_id);
@@ -259,17 +238,3 @@ CREATE INDEX idx_activity_logs_user_id ON activity_logs(user_id);
 CREATE INDEX idx_book_reserves_user_id ON book_reserves(user_id);
 CREATE INDEX idx_book_reserves_book_id ON book_reserves(book_id);
 
--- Insert sample data (optional - for testing)
--- Note: Replace with actual user IDs after creating admin/librarian accounts
-/*
--- Sample books
-INSERT INTO books (title, author, category, isbn, description, total_copies, available_copies) VALUES
-('Introduction to Algorithms', 'Thomas H. Cormen', 'Computer Science', '978-0262033848', 'A comprehensive textbook on algorithms covering a broad range of algorithms in depth.', 5, 3),
-('Clean Code', 'Robert C. Martin', 'Software Engineering', '978-0132350884', 'A handbook of agile software craftsmanship.', 3, 2),
-('Design Patterns', 'Gang of Four', 'Software Engineering', '978-0201633610', 'Elements of Reusable Object-Oriented Software.', 2, 0);
-
--- Sample digital resources
-INSERT INTO digital_resources (title, description, file_url, file_type, file_size, category, downloads) VALUES
-('Cloud Computing Fundamentals', 'An introduction to cloud computing concepts and architectures.', '/resources/cloud-computing.pdf', 'PDF', '2.5 MB', 'Cloud Computing', 45),
-('Machine Learning Research Paper', 'Latest advances in deep learning algorithms.', '/resources/ml-research.pdf', 'PDF', '1.8 MB', 'Machine Learning', 32);
-*/
